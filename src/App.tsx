@@ -79,6 +79,17 @@ const MainLayout: React.FC = () => {
     }
   };
 
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsSearchOpen(prev => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
   return (
     <div className="min-h-screen bg-background text-slate-text flex flex-row antialiased selection:bg-brand-100 selection:text-brand-900">
       {/* Collapsible Left Sidebar (Desktop) */}
@@ -86,11 +97,13 @@ const MainLayout: React.FC = () => {
 
       {/* Main Workspace Area */}
       <div className="flex-1 flex flex-col min-w-0 pb-16 md:pb-0">
-        {/* Top Header */}
-        <Header onOpenSearch={() => setIsSearchOpen(true)} />
+        {/* Top Header - shown on subpages; Dashboard features its own clean integrated header */}
+        {activeView !== 'dashboard' && (
+          <Header onOpenSearch={() => setIsSearchOpen(true)} />
+        )}
 
         {/* Dynamic View Canvas */}
-        <main className="flex-1 px-4 md:px-8 py-6 max-w-7xl w-full mx-auto">
+        <main className={`flex-1 px-4 md:px-8 py-6 max-w-7xl w-full mx-auto ${activeView === 'dashboard' ? 'pt-6' : ''}`}>
           {renderActiveView()}
         </main>
       </div>

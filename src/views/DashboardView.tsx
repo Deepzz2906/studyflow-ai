@@ -1,25 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
-  Sparkles,
-  Clock,
   Calendar,
-  AlertTriangle,
-  CheckCircle2,
-  ArrowRight,
-  Flame,
-  BookOpen,
+  Bell,
+  Plus,
+  CheckSquare,
   FileText,
   GraduationCap,
-  Play,
-  HelpCircle,
-  TrendingUp,
-  BarChart3,
-  ListTodo,
+  Clock,
+  Sparkles,
+  Check,
   ChevronRight,
-  Plus,
+  ArrowRight,
+  BookOpen,
+  Send,
+  X,
+  ExternalLink,
+  AlertCircle,
+  HelpCircle,
 } from 'lucide-react';
 import { useAcademic } from '../store/AcademicContext';
 import { AIService } from '../services/ai/AIService';
+
+interface TodayActivity {
+  id: string;
+  time: string;
+  title: string;
+  subject: string;
+  duration: string;
+  color: string;
+}
 
 export const DashboardView: React.FC = () => {
   const {
@@ -32,568 +41,702 @@ export const DashboardView: React.FC = () => {
     studyLogs,
     dailyGoal,
     setActiveView,
-    startFocusSession,
-    setIsAiDrawerOpen,
     openQuickAdd,
+    notifications,
+    markNotificationRead,
+    clearAllNotifications,
+    setIsAiDrawerOpen,
     sendChatMessage,
-    toggleAssignmentSubtask,
   } = useAcademic();
 
-  const [isWhyModalOpen, setIsWhyModalOpen] = useState(false);
+  // Local UI states
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [isQuickAddMenuOpen, setIsQuickAddMenuOpen] = useState(false);
+  const [aiInput, setAiInput] = useState('');
+  const [aiAnswer, setAiAnswer] = useState<string | null>(null);
+  const [isAiLoading, setIsAiLoading] = useState(false);
 
-  // Real-time AI daily brief and "What should I do now?" calculation
-  const dailyBrief = AIService.getDailyBrief(student, subjects, assignments, homework, tests, studyLogs, timetable);
-  const whatNow = AIService.getWhatShouldIDoNow('17:30', subjects, assignments, homework, tests, timetable);
-  const workload = AIService.analyzeWorkload(timetable, assignments, homework, tests);
+  // Today's activities completion state persisted in localStorage
+  const [completedActivities, setCompletedActivities] = useState<Record<string, boolean>>(() => {
+    try {
+      const saved = localStorage.getItem('studyflow_today_plan_completed');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
 
-  // Today's classes snapshot
-  const todayDayIndex = 1; // Tuesday demo
-  const todaysClasses = timetable
-    .filter(t => t.dayOfWeek === todayDayIndex)
-    .sort((a, b) => a.startTime.localeCompare(b.startTime));
+  const toggleActivity = (id: string) => {
+    setCompletedActivities(prev => {
+      const next = { ...prev, [id]: !prev[id] };
+      try {
+        localStorage.setItem('studyflow_today_plan_completed', JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
 
-  // Urgent deadlines
-  const upcomingAssignments = assignments
-    .filter(a => a.status !== 'Completed' && a.status !== 'Submitted')
-    .slice(0, 3);
+  // 1. Current Date String
+  const formattedDate = useMemo(() => {
+    const today = new Date();
+    const options: Intl.DateTimeFormatOptions = {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+    };
+    return today.toLocaleDateString('en-US', options);
+  }, []);
 
-  // Next Test
-  const nextTest = tests[0];
-
-  // Daily goal progress %
-  const goalPercent = Math.round(
-    ((dailyGoal.tasksCompleted / dailyGoal.tasksTarget) * 0.5 +
-      (dailyGoal.studyMinutesCompleted / dailyGoal.studyMinutesTarget) * 0.5) * 100
+  // 2. Summary KPI Calculations
+  const pendingAssignments = useMemo(
+    () => assignments.filter(a => a.status !== 'Completed' && a.status !== 'Submitted'),
+    [assignments]
   );
 
+  const pendingHomework = useMemo(
+    () => homework.filter(h => h.status !== 'Completed'),
+    [homework]
+  );
+
+  const pendingTasksCount = pendingAssignments.length + pendingHomework.length;
+
+  const urgentTasksCount = useMemo(() => {
+    return pendingAssignments.filter(
+      a => a.calculatedPriorityScore >= 80 || a.dueDate === '2026-09-09' || a.dueDate === '2026-09-10'
+    ).length;
+  }, [pendingAssignments]);
+
+  const nextTest = tests[0];
+
+  const studyHoursPlanned = (dailyGoal.studyMinutesTarget / 60).toFixed(1);
+  const studyHoursCompleted = (dailyGoal.studyMinutesCompleted / 60).toFixed(1);
+
+  // 3. Chronological Today's Plan items
+  const todaysActivities: TodayActivity[] = [
+    {
+      id: 'act-1',
+      time: '9:00 AM',
+      title: 'Computer Networks class',
+      subject: 'CS302 • Room 402',
+      duration: '1h 30m',
+      color: '#3563E9', // Primary blue
+    },
+    {
+      id: 'act-2',
+      time: '11:00 AM',
+      title: 'DBMS assignment',
+      subject: 'CS401 • ER Diagrams & SQL',
+      duration: '1h 00m',
+      color: '#38BDF8', // Secondary blue
+    },
+    {
+      id: 'act-3',
+      time: '2:00 PM',
+      title: 'Operating Systems Lab',
+      subject: 'CS201 • Kernel Threads',
+      duration: '2h 00m',
+      color: '#F59E0B', // Warning amber
+    },
+    {
+      id: 'act-4',
+      time: '5:00 PM',
+      title: 'Data Structures revision',
+      subject: 'CS102 • AVL Trees',
+      duration: '45m',
+      color: '#16A34A', // Success green
+    },
+    {
+      id: 'act-5',
+      time: '7:00 PM',
+      title: 'Practice questions',
+      subject: 'CS102 • CAT 1 Prep',
+      duration: '30m',
+      color: '#64748B', // Neutral slate
+    },
+  ];
+
+  // 4. Upcoming Deadlines (Next 3)
+  const upcomingDeadlines = useMemo(() => {
+    const list: Array<{
+      id: string;
+      name: string;
+      subject: string;
+      dueDate: string;
+      status: 'Overdue' | 'Due Soon' | 'Pending';
+    }> = [];
+
+    // Sort assignments by due date
+    const sortedAssignments = [...pendingAssignments].sort((a, b) =>
+      a.dueDate.localeCompare(b.dueDate)
+    );
+
+    for (const a of sortedAssignments.slice(0, 3)) {
+      const isDueTomorrow = a.dueDate === '2026-09-09';
+      const isOverdue = a.dueDate < '2026-09-08';
+      let status: 'Overdue' | 'Due Soon' | 'Pending' = 'Pending';
+      if (isOverdue) status = 'Overdue';
+      else if (isDueTomorrow || a.calculatedPriorityScore >= 80) status = 'Due Soon';
+
+      const subj = subjects.find(s => s.id === a.subjectId);
+
+      list.push({
+        id: a.id,
+        name: a.title,
+        subject: subj ? `${subj.code} • ${subj.name}` : a.subjectId,
+        dueDate: isDueTomorrow ? 'Tomorrow, Sep 9' : a.dueDate,
+        status,
+      });
+    }
+
+    return list;
+  }, [pendingAssignments, subjects]);
+
+  // 5. Handle AI Assistant queries
+  const handleAskAI = (promptText: string) => {
+    const query = promptText.trim();
+    if (!query) return;
+
+    setIsAiLoading(true);
+    setAiInput(query);
+
+    setTimeout(() => {
+      const lower = query.toLowerCase();
+
+      if (lower.includes('what should i study now') || lower.includes('what now')) {
+        const topAssignment = pendingAssignments[0];
+        setAiAnswer(
+          `Based on your deadlines and timetable, you should prioritize **${topAssignment ? topAssignment.title : 'DBMS ER-Diagrams'}** (due tomorrow). You currently have an open study window until 6:30 PM.`
+        );
+      } else if (lower.includes('due this week') || lower.includes('upcoming')) {
+        setAiAnswer(
+          `You have **${pendingAssignments.length} assignments** and **${pendingHomework.length} homework items** due this week:\n• DBMS B+ Tree Normalization (Due Tomorrow)\n• Computer Networks Socket Lab (Due Thursday)\n• Discrete Math Exercise #4 (Due Friday)`
+        );
+      } else if (lower.includes('prepare me') || lower.includes('test') || lower.includes('exam')) {
+        const testSubj = subjects.find(s => s.id === nextTest?.subjectId);
+        const testName = nextTest ? `${nextTest.name} (${testSubj?.code || 'CS102'})` : 'Data Structures CAT 1';
+        setAiAnswer(
+          `Your next exam is **${testName}** in **3 days**. Focus your revision on:\n1. AVL Tree balance factor rotations\n2. Graph BFS / DFS Traversals\n3. Big-O Complexity proofs`
+        );
+      } else {
+        // Fallback intelligent context responder
+        const response = AIService.processAIChat(query, 'dashboard', {
+          student,
+          subjects,
+          assignments,
+          homework,
+          tests,
+          timetable,
+          logs: studyLogs,
+        });
+        setAiAnswer(response.text);
+      }
+
+      setIsAiLoading(false);
+    }, 280);
+  };
+
+  const unreadCount = notifications.filter(n => !n.isRead).length;
+
   return (
-    <div className="space-y-6 pb-12 animate-in fade-in duration-200">
-      {/* 1. TOP GREETING & ACADEMIC LOAD SUMMARY */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-6 max-w-6xl mx-auto pb-10">
+      {/* =========================================================================
+          AREA A: SIMPLE HEADER
+          ========================================================================= */}
+      <header className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
         <div>
-          <h1 className="text-2xl md:text-3xl font-extrabold text-slate-text tracking-tight">
-            Good Evening, {student.name.split(' ')[0]} 👋
+          <h1 className="text-xl sm:text-2xl font-bold text-[#172B4D] tracking-tight">
+            Good morning, {student.name.split(' ')[0]}
           </h1>
-          <p className="text-sm text-slate-secondary mt-0.5">
-            Here's what needs your attention today across your {subjects.length} active courses.
+          <p className="text-sm text-[#64748B] mt-0.5">
+            Here's your plan for today.
           </p>
         </div>
 
-        {/* Academic Load Badge Pill */}
-        <div className="flex items-center gap-3 bg-card border border-slate-border px-4 py-2 rounded-2xl shadow-subtle">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-status-warning animate-pulse"></span>
-            <span className="text-xs font-bold text-slate-text">Today's Academic Load:</span>
+        {/* Right side controls: Date, Quick Add, Notifications, Profile */}
+        <div className="flex items-center gap-2.5">
+          {/* Current Date */}
+          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-[#E2E8F0] text-xs font-medium text-[#64748B] shadow-xs">
+            <Calendar className="w-3.5 h-3.5 text-[#64748B]" />
+            <span>{formattedDate}</span>
           </div>
-          <span className="text-xs font-extrabold text-brand px-2 py-0.5 rounded-lg bg-brand-50 border border-brand-200">
-            {assignments.filter(a => a.dueDate === '2026-09-09').length} Due Soon • 2.5h Planned
-          </span>
-        </div>
-      </div>
 
-      {/* 2. SUMMARY KPI STATS CARDS */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-        {/* Remaining Tasks */}
+          {/* Quick Add Button */}
+          <div className="relative">
+            <button
+              onClick={() => setIsQuickAddMenuOpen(!isQuickAddMenuOpen)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#3563E9] hover:bg-[#254EDB] text-white text-xs font-medium transition-colors shadow-xs"
+              title="Quick Add"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Quick Add</span>
+            </button>
+
+            {/* Quick Add Dropdown Menu */}
+            {isQuickAddMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-30"
+                  onClick={() => setIsQuickAddMenuOpen(false)}
+                />
+                <div className="absolute right-0 mt-2 w-48 bg-white border border-[#E2E8F0] rounded-xl shadow-md py-1 z-40 animate-in fade-in zoom-in-95 duration-100">
+                  <button
+                    onClick={() => {
+                      openQuickAdd('assignment');
+                      setIsQuickAddMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-[#172B4D] hover:bg-[#F5F7FB] flex items-center gap-2"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-[#3563E9]" />
+                    <span>New Assignment</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      openQuickAdd('homework');
+                      setIsQuickAddMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-[#172B4D] hover:bg-[#F5F7FB] flex items-center gap-2"
+                  >
+                    <BookOpen className="w-3.5 h-3.5 text-[#38BDF8]" />
+                    <span>New Homework</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      openQuickAdd('test');
+                      setIsQuickAddMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-[#172B4D] hover:bg-[#F5F7FB] flex items-center gap-2"
+                  >
+                    <GraduationCap className="w-3.5 h-3.5 text-[#F59E0B]" />
+                    <span>New Test / Exam</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      openQuickAdd('reminder');
+                      setIsQuickAddMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 text-xs text-[#172B4D] hover:bg-[#F5F7FB] flex items-center gap-2"
+                  >
+                    <Clock className="w-3.5 h-3.5 text-[#16A34A]" />
+                    <span>Study Reminder</span>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Notifications Icon with popover */}
+          <div className="relative">
+            <button
+              onClick={() => setIsNotifOpen(!isNotifOpen)}
+              className="p-2 rounded-lg bg-white border border-[#E2E8F0] text-[#64748B] hover:text-[#172B4D] hover:bg-[#F5F7FB] transition-colors relative shadow-xs"
+              title="Notifications"
+            >
+              <Bell className="w-4 h-4" />
+              {unreadCount > 0 && (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#EF4444]" />
+              )}
+            </button>
+
+            {/* Notifications Popover */}
+            {isNotifOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-30"
+                  onClick={() => setIsNotifOpen(false)}
+                />
+                <div className="absolute right-0 mt-2 w-80 bg-white border border-[#E2E8F0] rounded-xl shadow-lg py-2 z-40 animate-in fade-in zoom-in-95 duration-100">
+                  <div className="flex items-center justify-between px-3.5 py-1.5 border-b border-[#E2E8F0]">
+                    <span className="text-xs font-semibold text-[#172B4D]">Notifications</span>
+                    {unreadCount > 0 && (
+                      <button
+                        onClick={() => clearAllNotifications()}
+                        className="text-[11px] text-[#3563E9] hover:underline"
+                      >
+                        Mark all as read
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-60 overflow-y-auto divide-y divide-[#E2E8F0]">
+                    {notifications.length === 0 ? (
+                      <p className="p-4 text-center text-xs text-[#64748B]">No notifications</p>
+                    ) : (
+                      notifications.slice(0, 4).map(n => (
+                        <div
+                          key={n.id}
+                          onClick={() => markNotificationRead(n.id)}
+                          className={`p-3 text-xs cursor-pointer hover:bg-[#F5F7FB] transition-colors ${
+                            !n.isRead ? 'bg-[#F8FAFC]' : ''
+                          }`}
+                        >
+                          <p className="font-medium text-[#172B4D] truncate">{n.title}</p>
+                          <p className="text-[11px] text-[#64748B] mt-0.5 line-clamp-2">{n.message}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="pt-2 px-3 border-t border-[#E2E8F0] text-center">
+                    <button
+                      onClick={() => {
+                        setActiveView('notifications');
+                        setIsNotifOpen(false);
+                      }}
+                      className="text-[11px] text-[#3563E9] hover:underline font-medium"
+                    >
+                      View all notifications
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Profile Avatar */}
+          <button
+            onClick={() => setActiveView('settings')}
+            className="w-8 h-8 rounded-lg bg-[#EFF4FF] border border-[#BFD6FE] text-[#3563E9] font-bold text-xs flex items-center justify-center hover:bg-[#DBEAFE] transition-colors"
+            title="Profile & Settings"
+          >
+            {student.name
+              .split(' ')
+              .map(n => n[0])
+              .slice(0, 2)
+              .join('')}
+          </button>
+        </div>
+      </header>
+
+      {/* =========================================================================
+          AREA B: COMPACT SUMMARY (4 CARDS IN ONE ROW)
+          ========================================================================= */}
+      <section className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+        {/* 1. Tasks Remaining */}
         <div
           onClick={() => setActiveView('tasks')}
-          className="bg-card p-4 rounded-2xl border border-slate-border hover:border-brand-300 transition-all cursor-pointer shadow-subtle group"
+          className="bg-white p-4 rounded-xl border border-[#E2E8F0] shadow-xs hover:border-[#CBD5E1] transition-all cursor-pointer select-none"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-secondary">Tasks Remaining</span>
-            <div className="p-2 rounded-xl bg-blue-50 text-brand">
-              <ListTodo className="w-4 h-4" />
-            </div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-[#64748B]">Tasks remaining</span>
+            <CheckSquare className="w-4 h-4 text-[#64748B]" />
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-text">
-              {assignments.filter(a => a.status !== 'Completed').length + homework.filter(h => h.status !== 'Completed').length}
-            </span>
-            <span className="text-xs text-status-warning font-semibold">1 due tomorrow</span>
+          <div className="text-2xl font-bold text-[#172B4D] tracking-tight">
+            {pendingTasksCount}
           </div>
+          <p className="text-[11px] text-[#64748B] mt-1 truncate">
+            {urgentTasksCount > 0 ? `${urgentTasksCount} due soon` : 'All tasks on track'}
+          </p>
         </div>
 
-        {/* Study Time Planned */}
+        {/* 2. Upcoming Assignments */}
         <div
-          onClick={() => setActiveView('planner')}
-          className="bg-card p-4 rounded-2xl border border-slate-border hover:border-brand-300 transition-all cursor-pointer shadow-subtle group"
+          onClick={() => setActiveView('assignments')}
+          className="bg-white p-4 rounded-xl border border-[#E2E8F0] shadow-xs hover:border-[#CBD5E1] transition-all cursor-pointer select-none"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-secondary">Planned Study</span>
-            <div className="p-2 rounded-xl bg-cyan-50 text-accent-cyan">
-              <Clock className="w-4 h-4" />
-            </div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-[#64748B]">Upcoming assignments</span>
+            <FileText className="w-4 h-4 text-[#64748B]" />
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-text">2h 30m</span>
-            <span className="text-xs text-status-success font-semibold">45m completed</span>
+          <div className="text-2xl font-bold text-[#172B4D] tracking-tight">
+            {pendingAssignments.length}
           </div>
+          <p className="text-[11px] text-[#64748B] mt-1 truncate">
+            {pendingAssignments[0] ? `Next due tomorrow` : 'None pending'}
+          </p>
         </div>
 
-        {/* Next Test Countdown */}
+        {/* 3. Upcoming Tests */}
         <div
           onClick={() => setActiveView('tests')}
-          className="bg-card p-4 rounded-2xl border border-slate-border hover:border-amber-300 transition-all cursor-pointer shadow-subtle group"
+          className="bg-white p-4 rounded-xl border border-[#E2E8F0] shadow-xs hover:border-[#CBD5E1] transition-all cursor-pointer select-none"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-secondary">Next Exam</span>
-            <div className="p-2 rounded-xl bg-amber-50 text-amber-600">
-              <GraduationCap className="w-4 h-4" />
-            </div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-[#64748B]">Upcoming tests</span>
+            <GraduationCap className="w-4 h-4 text-[#64748B]" />
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-text">4 Days</span>
-            <span className="text-xs text-amber-600 font-semibold truncate max-w-[110px]">DS CAT 1</span>
+          <div className="text-2xl font-bold text-[#172B4D] tracking-tight">
+            {tests.length}
           </div>
+          <p className="text-[11px] text-[#64748B] mt-1 truncate">
+            {nextTest
+              ? `Next in 3 days (${subjects.find(s => s.id === nextTest.subjectId)?.code || 'Exam'})`
+              : 'No upcoming tests'}
+          </p>
         </div>
 
-        {/* Daily Goal Streak */}
+        {/* 4. Study Time Planned */}
         <div
-          onClick={() => setActiveView('progress')}
-          className="bg-card p-4 rounded-2xl border border-slate-border hover:border-emerald-300 transition-all cursor-pointer shadow-subtle group"
+          onClick={() => setActiveView('planner')}
+          className="bg-white p-4 rounded-xl border border-[#E2E8F0] shadow-xs hover:border-[#CBD5E1] transition-all cursor-pointer select-none"
         >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-slate-secondary">Study Streak</span>
-            <div className="p-2 rounded-xl bg-emerald-50 text-emerald-600">
-              <Flame className="w-4 h-4 fill-emerald-500 text-emerald-500" />
-            </div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-[#64748B]">Study time planned</span>
+            <Clock className="w-4 h-4 text-[#64748B]" />
           </div>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="text-2xl font-black text-slate-text">6 Days</span>
-            <span className="text-xs text-emerald-600 font-semibold">Goal {goalPercent}%</span>
+          <div className="text-2xl font-bold text-[#172B4D] tracking-tight">
+            {studyHoursPlanned}h
           </div>
+          <p className="text-[11px] text-[#64748B] mt-1 truncate">
+            {studyHoursCompleted}h completed today
+          </p>
         </div>
-      </div>
+      </section>
 
-      {/* 3. SIGNATURE SECTION: "WHAT SHOULD I DO NOW?" */}
-      <div className="relative overflow-hidden bg-gradient-to-r from-card via-card to-cyan-50/30 border-2 border-brand/20 rounded-2xl p-5 md:p-6 shadow-card">
-        <div className="flex items-center justify-between gap-3 mb-3">
-          <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-xl bg-brand text-white flex items-center justify-center font-bold text-xs shadow-sm">
-              <Play className="w-3.5 h-3.5 fill-white" />
-            </div>
-            <h2 className="text-base md:text-lg font-bold text-slate-text">
-              What Should I Do Now?
-            </h2>
-          </div>
-          <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-cyan-100 text-cyan-800 border border-cyan-300 flex items-center gap-1.5">
-            <Sparkles className="w-3 h-3 text-accent-cyan" />
-            AI Dynamic Recommendation
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-center">
-          {/* Main Recommended Task */}
-          <div className="lg:col-span-2 space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span
-                className="text-xs font-bold px-2.5 py-0.5 rounded-md"
-                style={{
-                  backgroundColor: `${whatNow.recommendedTask.subjectColor}15`,
-                  color: whatNow.recommendedTask.subjectColor,
-                }}
-              >
-                {whatNow.recommendedTask.subjectCode} • {whatNow.recommendedTask.subjectName}
-              </span>
-              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-status-danger/10 text-status-danger">
-                Priority: {whatNow.recommendedTask.priority}
-              </span>
-              <span className="text-xs text-slate-secondary font-medium">
-                • {whatNow.recommendedTask.dueContext}
-              </span>
-            </div>
-
-            <h3 className="text-lg md:text-xl font-bold text-slate-text">
-              {whatNow.recommendedTask.title}
-            </h3>
-
-            <p className="text-xs md:text-sm text-slate-secondary leading-relaxed">
-              {whatNow.reason} <span className="text-brand font-medium">{whatNow.contextAdvice}</span>
-            </p>
-          </div>
-
-          {/* Action CTAs */}
-          <div className="flex flex-col sm:flex-row lg:flex-col gap-2.5 justify-end">
-            <button
-              onClick={() => {
-                startFocusSession(
-                  'sub-dbms',
-                  whatNow.recommendedTask.title,
-                  whatNow.recommendedTask.estimatedMinutes
-                );
-              }}
-              className="w-full py-3 px-4 rounded-xl bg-brand hover:bg-brand-700 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-sm transition-all active:scale-[0.98]"
-            >
-              <Play className="w-4 h-4 fill-white" />
-              <span>{whatNow.recommendedTask.actionText}</span>
-            </button>
-
-            <button
-              onClick={() => setIsWhyModalOpen(true)}
-              className="w-full py-2.5 px-4 rounded-xl bg-background hover:bg-background-secondary border border-slate-border text-slate-text font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors"
-            >
-              <HelpCircle className="w-3.5 h-3.5 text-accent-cyan" />
-              <span>Ask AI Why</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* 4. AI DAILY BRIEF SECTION */}
-      <div className="bg-card border border-slate-border rounded-2xl p-5 md:p-6 shadow-subtle">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-border">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-cyan-50 text-cyan-700 flex items-center justify-center font-bold text-sm border border-cyan-200">
-              <Sparkles className="w-4 h-4 text-accent-cyan" />
-            </div>
+      {/* =========================================================================
+          MAIN 2-COLUMN SECTION:
+          Left: Area C (Today's Plan)
+          Right: Area D (AI Academic Assistant) + Area E (Upcoming Deadlines)
+          ========================================================================= */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* =======================================================================
+            AREA C: TODAY'S PLAN (MAIN SECTION)
+            ======================================================================= */}
+        <section className="lg:col-span-7 bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-xs">
+          <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="text-base font-bold text-slate-text">AI Daily Brief</h2>
-              <p className="text-xs text-slate-secondary">Intelligent workload synthesis & schedule guidance</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setActiveView('planner')}
-              className="px-3 py-1.5 rounded-xl bg-brand hover:bg-brand-700 text-white text-xs font-bold transition-all shadow-subtle flex items-center gap-1.5"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Create My Plan</span>
-            </button>
-            <button
-              onClick={() => {
-                sendChatMessage('Give me a detailed breakdown of my tasks for today.');
-                setIsAiDrawerOpen(true);
-              }}
-              className="px-3 py-1.5 rounded-xl bg-background hover:bg-background-secondary border border-slate-border text-slate-text text-xs font-semibold transition-colors"
-            >
-              Ask AI
-            </button>
-          </div>
-        </div>
-
-        {/* Synthesis Text */}
-        <div className="mt-4 p-4 rounded-xl bg-background-secondary/60 border border-slate-border">
-          <p className="text-sm font-semibold text-slate-text leading-relaxed">
-            "{dailyBrief.headline}"
-          </p>
-          <p className="text-xs text-slate-secondary mt-1 leading-relaxed">
-            {dailyBrief.summary}
-          </p>
-        </div>
-
-        {/* Recommended Chunks Grid */}
-        <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
-          {dailyBrief.recommendedTimeSlots.map((slot, idx) => (
-            <div
-              key={idx}
-              className="p-3.5 rounded-xl bg-card border border-slate-border hover:border-brand-200 transition-colors"
-            >
-              <div className="flex items-center justify-between text-xs font-bold text-brand">
-                <span>{slot.duration}</span>
-                <span className="text-[11px] px-2 py-0.5 rounded bg-brand-50 text-brand">
-                  Slot #{idx + 1}
-                </span>
-              </div>
-              <p className="text-xs font-bold text-slate-text mt-1 truncate">{slot.taskTitle}</p>
-              <p className="text-[11px] text-slate-secondary mt-1 line-clamp-2 leading-relaxed">
-                {slot.rationale}
+              <h2 className="text-base font-semibold text-[#172B4D]">Today's Plan</h2>
+              <p className="text-xs text-[#64748B] mt-0.5">
+                {todaysActivities.length} scheduled sessions
               </p>
             </div>
-          ))}
-        </div>
-      </div>
 
-      {/* 5. MAIN 2-COLUMN DASHBOARD GRID */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Columns: Deadlines & Today's Schedule */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Upcoming Deadlines & Homework */}
-          <div className="bg-card border border-slate-border rounded-2xl p-5 shadow-subtle">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <FileText className="w-4 h-4 text-brand" />
-                <h3 className="text-sm font-bold text-slate-text">Upcoming Deadlines</h3>
+            {/* Simple View Timetable link */}
+            <button
+              onClick={() => setActiveView('timetable')}
+              className="text-xs font-medium text-[#3563E9] hover:underline flex items-center gap-1"
+            >
+              <span>View Timetable</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Chronological Activities List */}
+          <div className="divide-y divide-[#E2E8F0]">
+            {todaysActivities.map(item => {
+              const isDone = !!completedActivities[item.id];
+
+              return (
+                <div
+                  key={item.id}
+                  className="py-3.5 first:pt-1 last:pb-1 flex items-center justify-between gap-3 group transition-colors"
+                >
+                  {/* Left: Checkbox + Small colored dot indicator + Time + Subject */}
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
+                    {/* Completion status checkbox */}
+                    <button
+                      onClick={() => toggleActivity(item.id)}
+                      className={`w-4 h-4 rounded border flex items-center justify-center transition-colors shrink-0 ${
+                        isDone
+                          ? 'bg-[#3563E9] border-[#3563E9] text-white'
+                          : 'border-[#CBD5E1] bg-white hover:border-[#3563E9]'
+                      }`}
+                      title={isDone ? 'Mark as incomplete' : 'Mark as complete'}
+                    >
+                      {isDone && <Check className="w-3 h-3 stroke-[2.5]" />}
+                    </button>
+
+                    {/* Small colored indicator dot */}
+                    <span
+                      className="w-2 h-2 rounded-full shrink-0"
+                      style={{ backgroundColor: item.color }}
+                    />
+
+                    {/* Time */}
+                    <span className="text-xs font-semibold text-[#172B4D] w-18 shrink-0">
+                      {item.time}
+                    </span>
+
+                    {/* Subject / Activity Title */}
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className={`text-xs font-medium truncate ${
+                          isDone ? 'line-through text-[#64748B]' : 'text-[#172B4D]'
+                        }`}
+                      >
+                        {item.title}
+                      </p>
+                      <p className="text-[11px] text-[#64748B] truncate mt-0.2">
+                        {item.subject}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Right: Duration & Completion status pill */}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-xs text-[#64748B] font-medium hidden sm:inline">
+                      {item.duration}
+                    </span>
+
+                    <span
+                      className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                        isDone
+                          ? 'bg-[#DCFCE7] text-[#16A34A]'
+                          : 'bg-[#F1F5F9] text-[#64748B]'
+                      }`}
+                    >
+                      {isDone ? 'Completed' : item.duration}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* =======================================================================
+            RIGHT COLUMN: AREA D & AREA E
+            ======================================================================= */}
+        <div className="lg:col-span-5 space-y-6">
+          {/* =====================================================================
+              AREA D: AI ACADEMIC ASSISTANT
+              ===================================================================== */}
+          <section className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-xs space-y-4">
+            <div>
+              <div className="flex items-center gap-1.5">
+                <Sparkles className="w-4 h-4 text-[#3563E9]" />
+                <h2 className="text-base font-semibold text-[#172B4D]">
+                  Your AI Study Assistant
+                </h2>
               </div>
+              <p className="text-xs text-[#64748B] mt-1">
+                Need help deciding what to study? Ask your personal academic assistant.
+              </p>
+            </div>
+
+            {/* Input Box with Ask AI button */}
+            <form
+              onSubmit={e => {
+                e.preventDefault();
+                handleAskAI(aiInput);
+              }}
+              className="flex items-center gap-2"
+            >
+              <input
+                type="text"
+                value={aiInput}
+                onChange={e => setAiInput(e.target.value)}
+                placeholder="Ask anything about your schedule or tests..."
+                className="flex-1 bg-[#F8FAFC] border border-[#E2E8F0] focus:border-[#3563E9] focus:bg-white text-xs text-[#172B4D] placeholder-[#94A3B8] px-3 py-2 rounded-lg outline-none transition-all"
+              />
+              <button
+                type="submit"
+                disabled={isAiLoading || !aiInput.trim()}
+                className="bg-[#3563E9] hover:bg-[#254EDB] disabled:opacity-50 text-white text-xs font-medium px-3.5 py-2 rounded-lg transition-colors shrink-0 flex items-center gap-1.5"
+              >
+                <span>Ask AI</span>
+              </button>
+            </form>
+
+            {/* Max 3 Suggested Prompts */}
+            <div className="flex flex-wrap gap-1.5 pt-0.5">
+              <button
+                onClick={() => handleAskAI('What should I study now?')}
+                className="text-[11px] font-medium bg-[#F5F7FB] hover:bg-[#EFF4FF] hover:text-[#3563E9] text-[#64748B] px-2.5 py-1 rounded-md border border-[#E2E8F0] transition-colors"
+              >
+                What should I study now?
+              </button>
+              <button
+                onClick={() => handleAskAI("What's due this week?")}
+                className="text-[11px] font-medium bg-[#F5F7FB] hover:bg-[#EFF4FF] hover:text-[#3563E9] text-[#64748B] px-2.5 py-1 rounded-md border border-[#E2E8F0] transition-colors"
+              >
+                What's due this week?
+              </button>
+              <button
+                onClick={() => handleAskAI('Prepare me for my next test.')}
+                className="text-[11px] font-medium bg-[#F5F7FB] hover:bg-[#EFF4FF] hover:text-[#3563E9] text-[#64748B] px-2.5 py-1 rounded-md border border-[#E2E8F0] transition-colors"
+              >
+                Prepare me for my next test.
+              </button>
+            </div>
+
+            {/* Inline AI Response Box */}
+            {aiAnswer && (
+              <div className="mt-3 p-3.5 rounded-lg bg-[#F8FAFC] border border-[#E2E8F0] text-xs text-[#172B4D] leading-relaxed relative animate-in fade-in duration-150">
+                <button
+                  onClick={() => setAiAnswer(null)}
+                  className="absolute top-2.5 right-2.5 text-[#64748B] hover:text-[#172B4D]"
+                  title="Close answer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+                <div className="whitespace-pre-line pr-4">
+                  {aiAnswer}
+                </div>
+                <div className="mt-2.5 pt-2 border-t border-[#E2E8F0] flex items-center justify-between text-[11px]">
+                  <span className="text-[#64748B]">Connected to live academic record</span>
+                  <button
+                    onClick={() => {
+                      sendChatMessage(aiInput || 'What should I study now?');
+                      setActiveView('ai-assistant');
+                    }}
+                    className="text-[#3563E9] hover:underline font-medium flex items-center gap-1"
+                  >
+                    <span>Open full assistant</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+
+          {/* =====================================================================
+              AREA E: UPCOMING DEADLINES
+              ===================================================================== */}
+          <section className="bg-white rounded-xl border border-[#E2E8F0] p-5 shadow-xs">
+            <div className="flex items-center justify-between mb-3.5">
+              <h2 className="text-base font-semibold text-[#172B4D]">Upcoming Deadlines</h2>
               <button
                 onClick={() => setActiveView('assignments')}
-                className="text-xs text-brand font-semibold hover:underline flex items-center gap-1"
+                className="text-xs font-medium text-[#3563E9] hover:underline"
               >
-                <span>View All</span>
-                <ChevronRight className="w-3.5 h-3.5" />
+                View all
               </button>
             </div>
 
-            <div className="space-y-3">
-              {upcomingAssignments.map(asg => {
-                const sub = subjects.find(s => s.id === asg.subjectId);
-                const isDueTomorrow = asg.dueDate === '2026-09-09';
-                const completedSubtasks = asg.subtasks.filter(st => st.isCompleted).length;
-
-                return (
+            {/* List of next 3 deadlines */}
+            <div className="divide-y divide-[#E2E8F0]">
+              {upcomingDeadlines.length === 0 ? (
+                <p className="text-xs text-[#64748B] py-3">No upcoming deadlines.</p>
+              ) : (
+                upcomingDeadlines.map(item => (
                   <div
-                    key={asg.id}
-                    className="p-3.5 rounded-xl border border-slate-border hover:border-brand-200 transition-all bg-background/40 hover:bg-white"
+                    key={item.id}
+                    className="py-3 first:pt-0.5 last:pb-0.5 flex items-center justify-between gap-3"
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span
-                            className="text-[10px] font-bold px-2 py-0.5 rounded"
-                            style={{ backgroundColor: `${sub?.color}15`, color: sub?.color }}
-                          >
-                            {sub?.code}
-                          </span>
-                          {isDueTomorrow && (
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">
-                              Due Tomorrow
-                            </span>
-                          )}
-                          <span className="text-xs font-semibold text-slate-secondary">
-                            Score: {asg.calculatedPriorityScore}/100
-                          </span>
-                        </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-semibold text-[#172B4D] truncate">
+                        {item.name}
+                      </p>
+                      <p className="text-[11px] text-[#64748B] truncate mt-0.5">
+                        {item.subject}
+                      </p>
+                    </div>
 
-                        <h4 className="text-xs md:text-sm font-bold text-slate-text mt-1 truncate">
-                          {asg.title}
-                        </h4>
+                    <div className="flex items-center gap-2.5 shrink-0">
+                      <span className="text-[11px] text-[#64748B] font-medium hidden sm:inline">
+                        {item.dueDate}
+                      </span>
 
-                        <p className="text-[11px] text-slate-secondary mt-0.5 line-clamp-1">
-                          {asg.description}
-                        </p>
-
-                        {/* Subtasks Progress */}
-                        {asg.subtasks.length > 0 && (
-                          <div className="mt-2.5 flex items-center gap-2">
-                            <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                              <div
-                                className="h-full bg-brand rounded-full transition-all"
-                                style={{
-                                  width: `${(completedSubtasks / asg.subtasks.length) * 100}%`,
-                                }}
-                              ></div>
-                            </div>
-                            <span className="text-[10px] font-bold text-slate-secondary">
-                              {completedSubtasks}/{asg.subtasks.length} subtasks
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      <button
-                        onClick={() => {
-                          startFocusSession(asg.subjectId, asg.title, 45);
-                        }}
-                        className="p-2 rounded-xl bg-brand-50 hover:bg-brand text-brand hover:text-white transition-colors"
-                        title="Start focus session"
+                      {/* Status Badge */}
+                      <span
+                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                          item.status === 'Overdue'
+                            ? 'bg-[#FEE2E2] text-[#EF4444]'
+                            : item.status === 'Due Soon'
+                            ? 'bg-[#FEF3C7] text-[#D97706]'
+                            : 'bg-[#EFF4FF] text-[#3563E9]'
+                        }`}
                       >
-                        <Play className="w-4 h-4" />
-                      </button>
+                        {item.status}
+                      </span>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Today's Timetable Snapshot */}
-          <div className="bg-card border border-slate-border rounded-2xl p-5 shadow-subtle">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-brand" />
-                <h3 className="text-sm font-bold text-slate-text">Today's Class Schedule</h3>
-              </div>
-              <button
-                onClick={() => setActiveView('timetable')}
-                className="text-xs text-brand font-semibold hover:underline flex items-center gap-1"
-              >
-                <span>Full Timetable</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <div className="divide-y divide-slate-100">
-              {todaysClasses.length === 0 ? (
-                <p className="text-xs text-slate-secondary py-4">No scheduled lectures today.</p>
-              ) : (
-                todaysClasses.map(evt => {
-                  const sub = subjects.find(s => s.id === evt.subjectId);
-                  return (
-                    <div key={evt.id} className="py-3 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-2 h-10 rounded-full" style={{ backgroundColor: sub?.color || '#4F46E5' }}></div>
-                        <div>
-                          <p className="text-xs font-bold text-slate-text">{evt.title}</p>
-                          <p className="text-[11px] text-slate-secondary">
-                            {evt.room || 'Main Hall'} • {evt.type.toUpperCase()}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-xs font-bold text-slate-text">{evt.startTime} – {evt.endTime}</span>
-                      </div>
-                    </div>
-                  );
-                })
+                ))
               )}
             </div>
-          </div>
-        </div>
-
-        {/* Right 1 Column: Exam Countdown, Weekly Workload & Goals */}
-        <div className="space-y-6">
-          {/* Upcoming Test Card */}
-          {nextTest && (
-            <div className="bg-card border border-slate-border rounded-2xl p-5 shadow-subtle">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <GraduationCap className="w-4 h-4 text-amber-500" />
-                  <h3 className="text-sm font-bold text-slate-text">Upcoming Exam</h3>
-                </div>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-                  In 4 Days
-                </span>
-              </div>
-
-              <div className="p-3.5 rounded-xl bg-amber-50/50 border border-amber-200">
-                <p className="text-xs font-bold text-slate-text">{nextTest.name}</p>
-                <p className="text-[11px] text-slate-secondary mt-0.5">
-                  Date: Sep 12, 2026 • 50 Marks
-                </p>
-
-                <div className="mt-3">
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="font-semibold text-slate-secondary">Exam Readiness</span>
-                    <span className="font-bold text-amber-700">{nextTest.preparationPercentage}%</span>
-                  </div>
-                  <div className="w-full h-2 rounded-full bg-amber-100 overflow-hidden">
-                    <div
-                      className="h-full bg-amber-500 rounded-full"
-                      style={{ width: `${nextTest.preparationPercentage}%` }}
-                    ></div>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => setActiveView('tests')}
-                  className="w-full mt-3 py-2 px-3 rounded-lg bg-white border border-amber-300 text-amber-900 hover:bg-amber-100 text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                  <span>View 4-Day Prep Plan</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Weekly Workload Optimizer */}
-          <div className="bg-card border border-slate-border rounded-2xl p-5 shadow-subtle">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-brand" />
-                <h3 className="text-sm font-bold text-slate-text">Weekly Workload</h3>
-              </div>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-50 text-status-danger border border-red-200">
-                HIGH LOAD
-              </span>
-            </div>
-
-            <div className="space-y-2 text-xs">
-              <div className="flex justify-between py-1 border-b border-slate-100">
-                <span className="text-slate-secondary">Active Deadlines:</span>
-                <span className="font-bold text-slate-text">{workload.totalAssignmentsDue} Assignments</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-100">
-                <span className="text-slate-secondary">Lecture Hours:</span>
-                <span className="font-bold text-slate-text">{workload.totalClassHours}h this week</span>
-              </div>
-              <div className="flex justify-between py-1 border-b border-slate-100">
-                <span className="text-slate-secondary">Recommended Study:</span>
-                <span className="font-bold text-brand">{workload.recommendedStudyHours}h</span>
-              </div>
-            </div>
-
-            <div className="mt-3 p-3 rounded-xl bg-red-50/40 border border-red-100 text-[11px] text-slate-secondary leading-relaxed">
-              <p className="font-bold text-slate-text text-xs mb-0.5">⚠️ Conflict Alert on Thursday</p>
-              Two lab sessions clash with test prep. Moving 1h study to Wednesday evening is recommended.
-            </div>
-
-            <button
-              onClick={() => {
-                sendChatMessage('Optimize my weekly schedule to balance Thursday workload.');
-                setIsAiDrawerOpen(true);
-              }}
-              className="w-full mt-3 py-2 rounded-xl bg-brand-50 hover:bg-brand text-brand hover:text-white font-bold text-xs transition-colors flex items-center justify-center gap-1.5"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Optimize My Week</span>
-            </button>
-          </div>
-
-          {/* Daily Goals Progress */}
-          <div className="bg-card border border-slate-border rounded-2xl p-5 shadow-subtle">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-bold text-slate-text">Today's Goals</h3>
-              <span className="text-xs font-bold text-brand">{goalPercent}%</span>
-            </div>
-
-            <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden mb-3">
-              <div
-                className="h-full bg-brand rounded-full transition-all"
-                style={{ width: `${goalPercent}%` }}
-              ></div>
-            </div>
-
-            <div className="space-y-2 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-secondary">Tasks Completed</span>
-                <span className="font-bold text-slate-text">
-                  {dailyGoal.tasksCompleted} / {dailyGoal.tasksTarget}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-secondary">Study Time</span>
-                <span className="font-bold text-slate-text">
-                  {dailyGoal.studyMinutesCompleted}m / {dailyGoal.studyMinutesTarget}m
-                </span>
-              </div>
-            </div>
-          </div>
+          </section>
         </div>
       </div>
-
-      {/* "Ask AI Why" Modal */}
-      {isWhyModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-text/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-card border border-slate-border rounded-2xl shadow-elevated p-6 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center gap-2 mb-3">
-              <div className="w-8 h-8 rounded-xl bg-cyan-50 text-cyan-700 flex items-center justify-center font-bold text-sm">
-                <Sparkles className="w-4 h-4 text-accent-cyan" />
-              </div>
-              <h3 className="font-bold text-base text-slate-text">Why this recommendation?</h3>
-            </div>
-
-            <div className="space-y-3 text-xs md:text-sm text-slate-secondary leading-relaxed">
-              <p>
-                The Smart Priority Engine analyzed your schedule and calculated a <strong>Priority Score of 95/100</strong> for the <strong>DBMS B+ Tree Assignment</strong> due to the following reasons:
-              </p>
-              <ul className="list-disc pl-5 space-y-1 text-slate-text">
-                <li>Due tomorrow at 23:59 (imminent deadline).</li>
-                <li>Estimated time remaining is ~1h 20m across subtasks 4 and 5.</li>
-                <li>Your current time window is clear of lecture clashes.</li>
-                <li>Completing this eliminates late-night panic before tomorrow's DBMS class.</li>
-              </ul>
-            </div>
-
-            <div className="mt-5 flex justify-end">
-              <button
-                onClick={() => setIsWhyModalOpen(false)}
-                className="px-4 py-2 bg-brand hover:bg-brand-700 text-white font-bold text-xs rounded-xl"
-              >
-                Got it, thanks!
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

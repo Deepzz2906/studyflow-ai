@@ -135,7 +135,20 @@ const STORAGE_KEY = 'studyflow_academic_data_v1';
 export const AcademicProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [student, setStudent] = useState<StudentProfile>(() => {
     const saved = localStorage.getItem(`${STORAGE_KEY}_student`);
-    return saved ? JSON.parse(saved) : INITIAL_STUDENT;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (parsed.currentGpa === 3.78 || !parsed.currentGpa) {
+          parsed.currentGpa = 8.5;
+          if (parsed.targetGpa === 3.90 || !parsed.targetGpa) parsed.targetGpa = 9.0;
+          localStorage.setItem(`${STORAGE_KEY}_student`, JSON.stringify(parsed));
+        }
+        return parsed;
+      } catch {
+        return INITIAL_STUDENT;
+      }
+    }
+    return INITIAL_STUDENT;
   });
 
   const [subjects, setSubjects] = useState<Subject[]>(() => {

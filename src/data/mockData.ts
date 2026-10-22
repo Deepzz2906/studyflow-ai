@@ -21,8 +21,8 @@ export const INITIAL_STUDENT: StudentProfile = {
   course: 'B.S. Computer Science & Engineering',
   year: 3,
   semester: 5,
-  targetGpa: 3.90,
-  currentGpa: 3.78,
+  targetGpa: 9.0,
+  currentGpa: 8.5,
   availableDailyStudyMinutes: 180, // 3 hours
   preferredStudyTime: 'evening',
   sessionDurationPreference: 45,

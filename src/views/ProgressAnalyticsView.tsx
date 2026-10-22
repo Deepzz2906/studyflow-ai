@@ -62,7 +62,7 @@ export const ProgressAnalyticsView: React.FC = () => {
           <div className="flex items-center gap-2">
             <h1 className="text-2xl font-extrabold text-slate-text">My Academic Progress</h1>
             <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-              GPA: {student.currentGpa.toFixed(2)} / {student.targetGpa.toFixed(2)}
+              CGPA: {student.currentGpa.toFixed(1)} / {student.targetGpa.toFixed(1)}
             </span>
           </div>
           <p className="text-xs md:text-sm text-slate-secondary mt-0.5">

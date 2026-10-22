@@ -190,7 +190,7 @@ export const Header: React.FC<HeaderProps> = ({ onOpenSearch }) => {
           />
           <div className="hidden lg:block text-left">
             <p className="text-xs font-bold text-slate-text leading-tight">{student.name}</p>
-            <p className="text-[10px] text-slate-secondary font-medium">GPA: {student.currentGpa.toFixed(2)}</p>
+            <p className="text-[10px] text-slate-secondary font-medium">CGPA: {student.currentGpa.toFixed(1)}</p>
           </div>
         </div>
       </div>

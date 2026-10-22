@@ -36,6 +36,7 @@ export const SettingsView: React.FC = () => {
   const [name, setName] = useState(student.name);
   const [college, setCollege] = useState(student.college);
   const [course, setCourse] = useState(student.course);
+  const [currentGpa, setCurrentGpa] = useState(student.currentGpa);
   const [targetGpa, setTargetGpa] = useState(student.targetGpa);
   const [studyMinutes, setStudyMinutes] = useState(student.availableDailyStudyMinutes);
   const [studyTimePref, setStudyTimePref] = useState(student.preferredStudyTime);
@@ -50,6 +51,7 @@ export const SettingsView: React.FC = () => {
       name,
       college,
       course,
+      currentGpa: Number(currentGpa),
       targetGpa: Number(targetGpa),
       availableDailyStudyMinutes: Number(studyMinutes),
       preferredStudyTime: studyTimePref as any,
@@ -141,12 +143,25 @@ export const SettingsView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-text mb-1">Target GPA</label>
+                <label className="block text-xs font-bold text-slate-text mb-1">Current CGPA</label>
                 <input
                   type="number"
                   step="0.01"
                   min="0.0"
-                  max="4.0"
+                  max="10.0"
+                  value={currentGpa}
+                  onChange={e => setCurrentGpa(Number(e.target.value))}
+                  className="w-full px-3.5 py-2 rounded-xl bg-background border border-slate-border text-xs text-slate-text focus:outline-none focus:border-brand"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-text mb-1">Target CGPA</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.0"
+                  max="10.0"
                   value={targetGpa}
                   onChange={e => setTargetGpa(Number(e.target.value))}
                   className="w-full px-3.5 py-2 rounded-xl bg-background border border-slate-border text-xs text-slate-text focus:outline-none focus:border-brand"
